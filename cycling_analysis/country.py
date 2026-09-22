@@ -67,11 +67,18 @@ from .population import (
     compute_population_stats,
     fetch_population_raster,
 )
+from .ine import fetch_ine_population, match_ine_to_gadm
 
 # pollution.py is Spain-only for now (see CLAUDE.md's Known gaps) - every
 # other country gets blank/NaN columns 1-10, same as a Spanish municipality
 # with 0 stations.
 POLLUTION_COUNTRIES = {'spain': 'ES'}
+
+# Spain uses INE's official Padrón (ine.py) instead of the WorldPop raster
+# (population.py) that every other configured country uses - see ine.py's
+# module docstring for why this can't just be "the population source" for
+# all 5 countries the way population.py's docstring originally described.
+INE_POPULATION_COUNTRIES = {'spain'}
 
 # ── Sub-region PBF sources ───────────────────────────────────────────────────
 # Each entry: (sub_region_name, geofabrik_url). sub_region_name must match the
@@ -352,7 +359,8 @@ def save_database_csv(summary: pd.DataFrame, out_path: Path, *,
 
 
 def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
-                          max_segments=MAX_SEGMENTS, run_name=None, pollution_year=2025):
+                          max_segments=MAX_SEGMENTS, run_name=None, pollution_year=2025,
+                          population_year=2025):
     """
     Municipality-by-municipality cycling infrastructure screen, resumable via
     a `{run_name}_checkpoint.csv` file (safe to Ctrl-C and re-run).
@@ -363,6 +371,10 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         or None for the whole country.
     pollution_year: year of EEA hourly data to pool for the pollution columns
         (Spain only - see POLLUTION_COUNTRIES). Ignored for other countries.
+    population_year: year of INE Padrón data to use for the population columns
+        (Spain only - see INE_POPULATION_COUNTRIES; ine.py's pobmun.zip covers
+        1996-2025 at time of writing). Ignored for other countries, which keep
+        using the WorldPop raster (population.py) regardless of this value.
     Returns the summary DataFrame (including `GADM ID`) - note the CSV/PNG written
     to `{run_name}_cycling_by_municipality.csv`/`.png` drop that column since it's
     an internal join/resume key, not something a human reader needs; the
@@ -410,13 +422,21 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
     # which needs a real-distance centroid, not a per-call reprojection.
     municipalities_gdf['centroid_utm'] = municipalities_utm.geometry.centroid
 
-    # Population (all 5 countries, unlike the Spain-only pollution columns) -
-    # zonal-summed once per country, in the GDF's native WGS84 CRS (matching
-    # the WorldPop raster's CRS), same "computed in bulk before the loop"
-    # shape as area_km2 above rather than per-row like the pollution columns.
-    print('Fetching WorldPop population raster ...')
-    population_raster_path = fetch_population_raster(GADM_CODES[country], data_dir)
-    municipalities_gdf = compute_population_stats(municipalities_gdf, population_raster_path)
+    # Population: Spain uses INE's official Padrón (ine.py) - real census-
+    # register counts, not a modelled raster estimate; every other configured
+    # country still uses the WorldPop raster (population.py), since INE has
+    # no equivalent for them (see ine.py's module docstring and
+    # INE_POPULATION_COUNTRIES above). Both paths compute once per country/
+    # run, before the per-municipality loop, same "computed in bulk" shape
+    # as area_km2 above rather than per-row like the pollution columns.
+    if country in INE_POPULATION_COUNTRIES:
+        print(f'Fetching INE population data ({population_year}) ...')
+        ine_df = fetch_ine_population(population_year, data_dir)
+        municipalities_gdf = match_ine_to_gadm(municipalities_gdf, ine_df)
+    else:
+        print('Fetching WorldPop population raster ...')
+        population_raster_path = fetch_population_raster(GADM_CODES[country], data_dir)
+        municipalities_gdf = compute_population_stats(municipalities_gdf, population_raster_path)
     municipalities_gdf['population_density'] = (
         municipalities_gdf['population'] / municipalities_gdf['area_km2']
     ).round(2)
