@@ -443,7 +443,17 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
 
     gadm_names = sorted(municipalities_gdf[prov_col].unique())
     config_names = {name for name, _ in province_list}
-    unmatched = config_names - set(gadm_names)
+    # Normalize the same way the per-municipality matching loop's tolerant
+    # fallback does (lower + strip + remove spaces) before diffing - a plain
+    # exact-string diff here falsely flags any region whose GADM NAME_1 has
+    # spaces stripped (e.g. config 'País Vasco' vs GADM 'PaísVasco'), even
+    # though that region matches fine via the loop's fallback below. This
+    # diagnostic used to disagree with the actual matching outcome for
+    # exactly that reason (found 2026-09 rerunning País Vasco).
+    def _region_key(s):
+        return s.lower().strip().replace(' ', '')
+    gadm_keys = {_region_key(n) for n in gadm_names}
+    unmatched = {name for name in config_names if _region_key(name) not in gadm_keys}
     if unmatched:
         print(f'WARNING: these region names have NO GADM match: {sorted(unmatched)}')
         print(f'   GADM {prov_col} values available: {gadm_names}')
