@@ -562,7 +562,19 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         for m_idx, muni_row in enumerate(remaining):
             muni_name = muni_row[muni_col]
             bbox = muni_row['geometry'].bounds
-            safe_name = str(muni_name).replace(' ', '_').replace('/', '_')
+            # Strip every character Windows forbids in a filename, not just
+            # space/'/' - found 2026-09 when GADM's own data turned out to be
+            # malformed for one Cataluña municipality (Tarragona's "L'Espluga
+            # de Francolí", GID_4 ESP.6...): its NAME_4 field is literally
+            # "L'EsplugadeFrancolí|Esplugad..." with a raw '|' joining two
+            # name variants (VARNAME_4 is 'NA', so this isn't the normal
+            # alt-name column - it's corrupted straight in NAME_4). That '|'
+            # crashed os.remove() in the `finally` block below with an
+            # uncaught OSError (WinError 123, invalid filename), taking down
+            # an entire 955-municipality Cataluña run one municipality before
+            # the end. Sanitize the full Windows-reserved set so no future
+            # oddly-encoded GADM name can do this again.
+            safe_name = re.sub(r'[<>:"/\\|?*]', '_', str(muni_name))
             temp_pbf = os.path.join(tempfile.gettempdir(), f'muni_{safe_name}.osm.pbf')
 
             print(f'  [{m_idx+1}/{len(remaining)}] {muni_name} ...', end=' ', flush=True)
@@ -658,7 +670,15 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
                 gc.collect()
                 try:
                     os.remove(temp_pbf)
-                except FileNotFoundError:
+                except OSError:
+                    # Broad on purpose: this is best-effort temp-file
+                    # cleanup inside a per-municipality loop whose whole
+                    # design goal is "one bad municipality gets SKIPPED, not
+                    # a crashed multi-hour run" - a narrower
+                    # except FileNotFoundError already let one unexpected
+                    # OSError (WinError 123, an unsanitized '|' in a GADM
+                    # name - see safe_name above) take down an entire
+                    # 955-municipality run one row before the end.
                     pass
 
             pd.DataFrame(municipality_results).to_csv(checkpoint_path, index=False)
