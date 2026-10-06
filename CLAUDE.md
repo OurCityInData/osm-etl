@@ -9,7 +9,11 @@ pip install -r requirements.txt
 # Also requires osmium CLI (used to bbox-crop large PBF extracts):
 brew install osmium-tool   # macOS
 apt-get install osmium-tool  # Linux
+# Windows: osmium comes from conda-forge (e.g. a micromamba env with
+# osmium-tool) — its Library/bin must be on PATH when running the scripts.
 ```
+
+**If `osmium` isn't on PATH (or the extract fails for any reason), `run_country_analysis()` doesn't abort** — every municipality prints `SKIPPED - osmium extract failed` and is written to the checkpoint as a zero-km row marked done, so a re-run won't retry them. Move the checkpoint aside before re-running. The same applies to `max_segments` skips: large municipalities (Lorca, Cartagena, Murcia city all exceed the 30,000 default) need their zero rows dropped from the checkpoint and a re-run with a higher `--max-segments` (60,000 was enough for Murcia).
 
 ## Commands
 

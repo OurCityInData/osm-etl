@@ -24,6 +24,7 @@ import io
 import os
 import re
 import subprocess
+import tempfile
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -532,7 +533,7 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
             muni_name = muni_row[muni_col]
             bbox = muni_row['geometry'].bounds
             safe_name = str(muni_name).replace(' ', '_').replace('/', '_')
-            temp_pbf = f'/tmp/muni_{safe_name}.osm.pbf'
+            temp_pbf = os.path.join(tempfile.gettempdir(), f'muni_{safe_name}.osm.pbf')
 
             print(f'  [{m_idx+1}/{len(remaining)}] {muni_name} ...', end=' ', flush=True)
 
