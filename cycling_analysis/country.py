@@ -91,7 +91,7 @@ REGIONS = {
         ('Islas Baleares',    'https://download.geofabrik.de/europe/spain/islas-baleares-latest.osm.pbf'),
         ('La Rioja',          'https://download.geofabrik.de/europe/spain/la-rioja-latest.osm.pbf'),
         ('Madrid',            'https://download.geofabrik.de/europe/spain/madrid-latest.osm.pbf'),
-        ('Murcia',            'https://download.geofabrik.de/europe/spain/murcia-latest.osm.pbf'),
+        ('Región de Murcia',  'https://download.geofabrik.de/europe/spain/murcia-latest.osm.pbf'),
         ('Navarra',           'https://download.geofabrik.de/europe/spain/navarra-latest.osm.pbf'),
         ('País Vasco',        'https://download.geofabrik.de/europe/spain/pais-vasco-latest.osm.pbf'),
         ('Valencia',          'https://download.geofabrik.de/europe/spain/valencia-latest.osm.pbf'),
