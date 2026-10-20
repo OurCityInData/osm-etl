@@ -24,6 +24,7 @@ import io
 import os
 import re
 import subprocess
+import tempfile
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -66,11 +67,18 @@ from .population import (
     compute_population_stats,
     fetch_population_raster,
 )
+from .ine import fetch_ine_population, match_ine_to_gadm
 
 # pollution.py is Spain-only for now (see CLAUDE.md's Known gaps) - every
 # other country gets blank/NaN columns 1-10, same as a Spanish municipality
 # with 0 stations.
 POLLUTION_COUNTRIES = {'spain': 'ES'}
+
+# Spain uses INE's official Padrón (ine.py) instead of the WorldPop raster
+# (population.py) that every other configured country uses - see ine.py's
+# module docstring for why this can't just be "the population source" for
+# all 5 countries the way population.py's docstring originally described.
+INE_POPULATION_COUNTRIES = {'spain'}
 
 # ── Sub-region PBF sources ───────────────────────────────────────────────────
 # Each entry: (sub_region_name, geofabrik_url). sub_region_name must match the
@@ -81,7 +89,7 @@ REGIONS = {
     'spain': [
         ('Andalucía',         'https://download.geofabrik.de/europe/spain/andalucia-latest.osm.pbf'),
         ('Aragón',            'https://download.geofabrik.de/europe/spain/aragon-latest.osm.pbf'),
-        ('Asturias',          'https://download.geofabrik.de/europe/spain/asturias-latest.osm.pbf'),
+        ('Principado de Asturias',    'https://download.geofabrik.de/europe/spain/asturias-latest.osm.pbf'),
         ('Cantabria',         'https://download.geofabrik.de/europe/spain/cantabria-latest.osm.pbf'),
         ('Castilla-La Mancha','https://download.geofabrik.de/europe/spain/castilla-la-mancha-latest.osm.pbf'),
         ('Castilla y León',   'https://download.geofabrik.de/europe/spain/castilla-y-leon-latest.osm.pbf'),
@@ -90,11 +98,11 @@ REGIONS = {
         ('Galicia',           'https://download.geofabrik.de/europe/spain/galicia-latest.osm.pbf'),
         ('Islas Baleares',    'https://download.geofabrik.de/europe/spain/islas-baleares-latest.osm.pbf'),
         ('La Rioja',          'https://download.geofabrik.de/europe/spain/la-rioja-latest.osm.pbf'),
-        ('Madrid',            'https://download.geofabrik.de/europe/spain/madrid-latest.osm.pbf'),
-        ('Murcia',            'https://download.geofabrik.de/europe/spain/murcia-latest.osm.pbf'),
-        ('Navarra',           'https://download.geofabrik.de/europe/spain/navarra-latest.osm.pbf'),
+        ('Comunidad de Madrid',       'https://download.geofabrik.de/europe/spain/madrid-latest.osm.pbf'),
+        ('Región de Murcia',          'https://download.geofabrik.de/europe/spain/murcia-latest.osm.pbf'),
+        ('Comunidad Foral de Navarra','https://download.geofabrik.de/europe/spain/navarra-latest.osm.pbf'),
         ('País Vasco',        'https://download.geofabrik.de/europe/spain/pais-vasco-latest.osm.pbf'),
-        ('Valencia',          'https://download.geofabrik.de/europe/spain/valencia-latest.osm.pbf'),
+        ('Comunidad Valenciana',      'https://download.geofabrik.de/europe/spain/valencia-latest.osm.pbf'),
     ],
     'netherlands': [
         ('Groningen',     'https://download.geofabrik.de/europe/netherlands/groningen-latest.osm.pbf'),
@@ -351,7 +359,8 @@ def save_database_csv(summary: pd.DataFrame, out_path: Path, *,
 
 
 def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
-                          max_segments=MAX_SEGMENTS, run_name=None, pollution_year=2025):
+                          max_segments=MAX_SEGMENTS, run_name=None, pollution_year=2025,
+                          population_year=2025):
     """
     Municipality-by-municipality cycling infrastructure screen, resumable via
     a `{run_name}_checkpoint.csv` file (safe to Ctrl-C and re-run).
@@ -362,6 +371,10 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         or None for the whole country.
     pollution_year: year of EEA hourly data to pool for the pollution columns
         (Spain only - see POLLUTION_COUNTRIES). Ignored for other countries.
+    population_year: year of INE Padrón data to use for the population columns
+        (Spain only - see INE_POPULATION_COUNTRIES; ine.py's pobmun.zip covers
+        1996-2025 at time of writing). Ignored for other countries, which keep
+        using the WorldPop raster (population.py) regardless of this value.
     Returns the summary DataFrame (including `GADM ID`) - note the CSV/PNG written
     to `{run_name}_cycling_by_municipality.csv`/`.png` drop that column since it's
     an internal join/resume key, not something a human reader needs; the
@@ -409,20 +422,38 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
     # which needs a real-distance centroid, not a per-call reprojection.
     municipalities_gdf['centroid_utm'] = municipalities_utm.geometry.centroid
 
-    # Population (all 5 countries, unlike the Spain-only pollution columns) -
-    # zonal-summed once per country, in the GDF's native WGS84 CRS (matching
-    # the WorldPop raster's CRS), same "computed in bulk before the loop"
-    # shape as area_km2 above rather than per-row like the pollution columns.
-    print('Fetching WorldPop population raster ...')
-    population_raster_path = fetch_population_raster(GADM_CODES[country], data_dir)
-    municipalities_gdf = compute_population_stats(municipalities_gdf, population_raster_path)
+    # Population: Spain uses INE's official Padrón (ine.py) - real census-
+    # register counts, not a modelled raster estimate; every other configured
+    # country still uses the WorldPop raster (population.py), since INE has
+    # no equivalent for them (see ine.py's module docstring and
+    # INE_POPULATION_COUNTRIES above). Both paths compute once per country/
+    # run, before the per-municipality loop, same "computed in bulk" shape
+    # as area_km2 above rather than per-row like the pollution columns.
+    if country in INE_POPULATION_COUNTRIES:
+        print(f'Fetching INE population data ({population_year}) ...')
+        ine_df = fetch_ine_population(population_year, data_dir)
+        municipalities_gdf = match_ine_to_gadm(municipalities_gdf, ine_df)
+    else:
+        print('Fetching WorldPop population raster ...')
+        population_raster_path = fetch_population_raster(GADM_CODES[country], data_dir)
+        municipalities_gdf = compute_population_stats(municipalities_gdf, population_raster_path)
     municipalities_gdf['population_density'] = (
         municipalities_gdf['population'] / municipalities_gdf['area_km2']
     ).round(2)
 
     gadm_names = sorted(municipalities_gdf[prov_col].unique())
     config_names = {name for name, _ in province_list}
-    unmatched = config_names - set(gadm_names)
+    # Normalize the same way the per-municipality matching loop's tolerant
+    # fallback does (lower + strip + remove spaces) before diffing - a plain
+    # exact-string diff here falsely flags any region whose GADM NAME_1 has
+    # spaces stripped (e.g. config 'País Vasco' vs GADM 'PaísVasco'), even
+    # though that region matches fine via the loop's fallback below. This
+    # diagnostic used to disagree with the actual matching outcome for
+    # exactly that reason (found 2026-09 rerunning País Vasco).
+    def _region_key(s):
+        return s.lower().strip().replace(' ', '')
+    gadm_keys = {_region_key(n) for n in gadm_names}
+    unmatched = {name for name in config_names if _region_key(name) not in gadm_keys}
     if unmatched:
         print(f'WARNING: these region names have NO GADM match: {sorted(unmatched)}')
         print(f'   GADM {prov_col} values available: {gadm_names}')
@@ -531,8 +562,20 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         for m_idx, muni_row in enumerate(remaining):
             muni_name = muni_row[muni_col]
             bbox = muni_row['geometry'].bounds
-            safe_name = str(muni_name).replace(' ', '_').replace('/', '_')
-            temp_pbf = f'/tmp/muni_{safe_name}.osm.pbf'
+            # Strip every character Windows forbids in a filename, not just
+            # space/'/' - found 2026-09 when GADM's own data turned out to be
+            # malformed for one Cataluña municipality (Tarragona's "L'Espluga
+            # de Francolí", GID_4 ESP.6...): its NAME_4 field is literally
+            # "L'EsplugadeFrancolí|Esplugad..." with a raw '|' joining two
+            # name variants (VARNAME_4 is 'NA', so this isn't the normal
+            # alt-name column - it's corrupted straight in NAME_4). That '|'
+            # crashed os.remove() in the `finally` block below with an
+            # uncaught OSError (WinError 123, invalid filename), taking down
+            # an entire 955-municipality Cataluña run one municipality before
+            # the end. Sanitize the full Windows-reserved set so no future
+            # oddly-encoded GADM name can do this again.
+            safe_name = re.sub(r'[<>:"/\\|?*]', '_', str(muni_name))
+            temp_pbf = os.path.join(tempfile.gettempdir(), f'muni_{safe_name}.osm.pbf')
 
             print(f'  [{m_idx+1}/{len(remaining)}] {muni_name} ...', end=' ', flush=True)
 
@@ -627,7 +670,15 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
                 gc.collect()
                 try:
                     os.remove(temp_pbf)
-                except FileNotFoundError:
+                except OSError:
+                    # Broad on purpose: this is best-effort temp-file
+                    # cleanup inside a per-municipality loop whose whole
+                    # design goal is "one bad municipality gets SKIPPED, not
+                    # a crashed multi-hour run" - a narrower
+                    # except FileNotFoundError already let one unexpected
+                    # OSError (WinError 123, an unsanitized '|' in a GADM
+                    # name - see safe_name above) take down an entire
+                    # 955-municipality run one row before the end.
                     pass
 
             pd.DataFrame(municipality_results).to_csv(checkpoint_path, index=False)

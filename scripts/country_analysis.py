@@ -41,6 +41,10 @@ def main():
     parser.add_argument('--pollution-year', type=int, default=2025,
                          help='Year of EEA hourly data to pool for the pollution columns '
                               '(Spain only for now)')
+    parser.add_argument('--population-year', type=int, default=2025,
+                         help='Year of INE Padrón data to use for the population columns '
+                              '(Spain only - ignored for other countries, which use '
+                              'WorldPop regardless)')
     args = parser.parse_args()
 
     summary = run_country_analysis(
@@ -49,6 +53,7 @@ def main():
         data_dir=Path(args.data_dir),
         max_segments=args.max_segments,
         pollution_year=args.pollution_year,
+        population_year=args.population_year,
     )
 
     print(f'\nShape: {summary.shape[0]} municipalities x {summary.shape[1]} columns')
