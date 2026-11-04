@@ -33,6 +33,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import requests
+from shapely import make_valid, prepare
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from pyrosm import OSM
@@ -252,6 +253,36 @@ def osmium_extract(src_pbf: str, bbox, dest_pbf: str) -> bool:
     return result.returncode == 0
 
 
+def clip_roads_to_polygon(roads: gpd.GeoDataFrame, poly) -> gpd.GeoDataFrame:
+    """
+    Keep only the part of each road that lies inside `poly` (both in the same
+    metric CRS). Roads fully inside pass through untouched, roads fully outside
+    are dropped, and roads crossing the boundary are cut at it, so lengths
+    measured afterwards cover this municipality's territory only.
+
+    osmium_extract() above cuts by *bounding box*, which also sweeps in
+    neighbouring municipalities' roads (measured 2026-10: Madrid +80% km,
+    Valencia +115%, Orihuela +284% vs. clipped); this removes them.
+    """
+    if not poly.is_valid:
+        poly = make_valid(poly)          # GADM polygons are occasionally invalid
+    prepare(poly)                        # speeds up the many tests below
+
+    # Cheap spatial-index pass: only roads touching the polygon at all.
+    hits = roads.iloc[roads.sindex.query(poly, predicate='intersects')]
+    if hits.empty:
+        return hits
+
+    inside = hits.geometry.within(poly)
+    crossing = hits[~inside].copy()
+    crossing['geometry'] = crossing.geometry.intersection(poly)   # the cut
+
+    clipped = pd.concat([hits[inside], crossing])
+    # A road that merely touches the border at one point becomes a Point
+    # (length 0) - drop those along with anything empty.
+    return clipped[clipped.geometry.length > 0]
+
+
 def save_table_png(df: pd.DataFrame, out_path: Path, title: str = None) -> None:
     """
     Render a DataFrame as a table image. Uses the Agg canvas directly
@@ -421,6 +452,9 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
     # pollution.estimate_own_pollution_stats()'s nearest-station fallback,
     # which needs a real-distance centroid, not a per-call reprojection.
     municipalities_gdf['centroid_utm'] = municipalities_utm.geometry.centroid
+    # Boundary in the same metric CRS as the roads, used to clip each
+    # municipality's roads to its real boundary (clip_roads_to_polygon).
+    municipalities_gdf['geometry_utm'] = municipalities_utm.geometry
 
     # Population: Spain uses INE's official Padrón (ine.py) - real census-
     # register counts, not a modelled raster estimate; every other configured
@@ -605,14 +639,20 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
                 roads_raw = osm.get_network(network_type='all', extra_attributes=EXTRA_OSM_ATTRIBUTES)
                 if roads_raw is None or len(roads_raw) == 0:
                     raise ValueError('No roads found')
-                if len(roads_raw) > max_segments:
-                    raise ValueError(
-                        f'{len(roads_raw):,} segments > max_segments={max_segments:,} '
-                        f'(likely bbox overcount - skipping to avoid RAM crash)'
-                    )
 
                 roads = roads_raw.to_crs(utm_crs).copy()
                 del roads_raw
+                # The bbox extract above also holds neighbours' roads - trim to
+                # the real municipal boundary BEFORE measuring or classifying.
+                roads = clip_roads_to_polygon(roads, muni_row['geometry_utm'])
+                if len(roads) == 0:
+                    raise ValueError('No roads found inside municipality boundary')
+                # Now counts only this municipality's own roads (was the bbox's).
+                if len(roads) > max_segments:
+                    raise ValueError(
+                        f'{len(roads):,} segments > max_segments={max_segments:,} '
+                        f'(inside the boundary - skipping to avoid RAM crash)'
+                    )
                 roads['length_m'] = roads.geometry.length
 
                 cycling_config = get_cycling_config(country, muni_name)
@@ -632,6 +672,10 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
                     custom_filter=BIKE_AMENITY_FILTER,
                     extra_attributes=BIKE_AMENITY_EXTRA_ATTRIBUTES,
                 )
+                if pois is not None:
+                    # Same bbox issue as the roads: keep only amenities inside
+                    # the boundary (pyrosm POIs are WGS84, like the GADM polygon).
+                    pois = pois[pois.intersects(muni_row['geometry'])]
                 amenity_stats = compute_bike_amenity_stats(pois)
 
                 result_row = {
