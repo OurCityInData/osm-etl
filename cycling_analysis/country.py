@@ -29,6 +29,13 @@ import unicodedata
 import zipfile
 from pathlib import Path
 
+# rasterio must be imported before geopandas: rasterio and geopandas's pyogrio
+# backend each bundle their own GDAL build, and on some platforms (observed on
+# macOS x86_64 wheels: rasterio's GDAL 3.10 vs pyogrio's GDAL 3.12) loading
+# geopandas first segfaults the first time rasterio reads a file (the WorldPop
+# zonal_stats call in population.py). Import order decides which GDAL wins.
+import rasterio  # noqa: F401
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -225,21 +232,37 @@ def load_gadm_municipalities(country: str, data_dir: Path) -> gpd.GeoDataFrame:
     return gdf
 
 
-def download_pbf(url: str, dest: Path) -> Path:
+def download_pbf(url: str, dest: Path, retries: int = 3) -> Path:
+    """
+    Downloads to a `.part` temp file and renames to `dest` only once complete,
+    retrying on a dropped connection. Without the rename, a failed download left
+    a truncated file at `dest`, and `dest.exists()` is treated as "already
+    cached" - so later runs silently reused the corrupt partial PBF.
+    """
     if dest.exists():
         return dest
-    r = requests.get(url, stream=True, timeout=300)
-    r.raise_for_status()
-    total = int(r.headers.get('content-length', 0))
-    downloaded = 0
-    with open(dest, 'wb') as f:
-        for block in r.iter_content(chunk_size=4 * 1024 * 1024):
-            f.write(block)
-            downloaded += len(block)
-            if total:
-                print(f'\r  {downloaded * 100 // total:3d}%', end='', flush=True)
-    print()
-    return dest
+    tmp_dest = dest.with_suffix(dest.suffix + '.part')
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(url, stream=True, timeout=300)
+            r.raise_for_status()
+            total = int(r.headers.get('content-length', 0))
+            downloaded = 0
+            with open(tmp_dest, 'wb') as f:
+                for block in r.iter_content(chunk_size=4 * 1024 * 1024):
+                    f.write(block)
+                    downloaded += len(block)
+                    if total:
+                        print(f'\r  {downloaded * 100 // total:3d}%', end='', flush=True)
+            print()
+            tmp_dest.rename(dest)
+            return dest
+        except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError) as e:
+            last_exc = e
+            print(f'\n  Download attempt {attempt}/{retries} failed ({e!r}), retrying ...')
+            tmp_dest.unlink(missing_ok=True)
+    raise last_exc
 
 
 def osmium_extract(src_pbf: str, bbox, dest_pbf: str) -> bool:
@@ -725,7 +748,12 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
                     # 955-municipality run one row before the end.
                     pass
 
-            pd.DataFrame(municipality_results).to_csv(checkpoint_path, index=False)
+            # Temp file + rename: pandas truncates the target on open, so a process
+            # killed mid-write used to leave the checkpoint SMALLER than before,
+            # silently losing already-completed municipalities.
+            tmp_checkpoint_path = checkpoint_path + '.part'
+            pd.DataFrame(municipality_results).to_csv(tmp_checkpoint_path, index=False)
+            os.replace(tmp_checkpoint_path, checkpoint_path)
 
         gc.collect()
 
