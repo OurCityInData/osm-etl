@@ -36,6 +36,10 @@ python scripts/compare_vs_bikeneat.py --city barcelona
 
 # Country-level screening (resumable — safe to Ctrl-C and re-run)
 python scripts/country_analysis.py --country spain --regions Cataluña
+
+# Maps + PPTX/PDF for the 13 RedBici pilot cities (needs the regional PBFs + GADM cached in data/)
+python scripts/city_maps.py                      # all 13 -> output/city_maps/
+python scripts/city_maps.py --cities Valencia --no-report
 ```
 
 ## Git workflow
@@ -124,6 +128,9 @@ Verified empirically against the live API (2026-07), correcting several assumpti
 - `cycling_analysis/area_classification.py` — `classify_area_road()`, `CyclingLegalConfig`, `CATEGORIES` (the country-level screening taxonomy — see Classification layer above)
 - `cycling_analysis/bike_amenities.py` — `compute_bike_amenity_stats()`: bicycle parking (spots/capacity/covered) and combined shop+rental+repair-station counts, from OSM POI tags
 - `cycling_analysis/population.py` — `fetch_population_raster()`, `compute_population_stats()`: WorldPop-based `Population`/`Population density (per km²)` columns, Netherlands/Germany/Belgium/Denmark only since 2026-09 (see Population columns above)
+- `cycling_analysis/city_map.py` — single-city map pipeline: `load_city_roads()` (same bbox-extract → `clip_roads_to_polygon()` → `classify_area_road()` flow as `run_country_analysis()`), `build_html_map()` (folium, one toggleable layer per category, km legend), `render_map_png()`. `CATEGORY_STYLE` (colours) must stay in sync with `CATEGORIES` (asserted at import)
+- `cycling_analysis/city_report.py` — `build_pptx()` / `build_pdf()`: title, legend, cross-city chart + table, one page per city. PDF is drawn with matplotlib (no LibreOffice dependency)
+- `scripts/city_maps.py` — CLI + `PILOT_CITIES` registry (display name → pinned GADM GID + region). GIDs are pinned because GADM has same-named enclave polygons for Alicante, Zaragoza and Valencia; the largest polygon is the city. Per-city results are cached as parquet in `output/city_maps/cache/` (delete to force a re-classify)
 - `cycling_analysis/ine.py` — `fetch_ine_population()`, `match_ine_to_gadm()`: INE Padrón-based `Population`/`Population density (per km²)` columns, Spain only (see Population columns above)
 - `tests/test_ine.py` — unit tests for `ine.py`'s name-normalization and matching logic (no network; `fetch_ine_population()` hits INE directly and was validated manually against a live pull, see Population columns above)
 - `cycling_analysis/bikeneat.py` — BikeNEAT predicate engine (shared by Barcelona and Freiburg); its German StVO traffic-sign logic was deliberately NOT ported into `classify_area_road()` — `CyclingLegalConfig.sign_code_rules` is an empty opt-in extension point for that, per-country, once someone verifies sign-tagging density
@@ -140,6 +147,10 @@ Verified empirically against the live API (2026-07), correcting several assumpti
 - `tests/test_population.py` — unit tests for `compute_population_stats()` against an in-memory synthetic raster (no network; `fetch_population_raster()` hits WorldPop directly and was validated manually, see Population columns above)
 
 ## Known gaps
+
+**Interactive maps must not use CARTO's `light_all` tiles.** `basemaps.cartocdn.com/light_all` (what the older notebook maps in the RedBici Drive folder use) now returns "API KEY REQUIRED" placeholder tiles, which is the watermark over every one of those maps. `city_map.BASEMAPS` uses key-free layers only (Esri light grey default, OpenStreetMap, CyclOSM). Old HTML maps can be fixed by swapping that tile URL.
+
+**`Greenway` is tag-based and includes unpaved rural tracks**, so rural municipalities (e.g. Villena: ~850 of ~1,200 km) look mostly Greenway on the maps. That is the classifier's documented definition, not a map bug; read the totals with that in mind.
 
 **Roads are now clipped to each municipality's real boundary (`clip_roads_to_polygon()` in `country.py`), and every km column from runs made BEFORE this change is inflated.** `run_country_analysis()` used to cut each municipality's roads out of the regional PBF by *bounding box* only (`osmium extract -b`) and never trimmed them to the GADM polygon, so a municipality was credited with its neighbours' roads that fell inside its rectangle. The error grows with how much bigger the rectangle is than the real shape: measured 2026-10 against the clipped result — Santander +11%, Madrid +80%, Valencia +115%, Orihuela +284%. A full La Rioja run went from 22,511 km (4.5 km/km²) unclipped to 9,124 km (1.8 km/km²) clipped; every one of its 177 municipalities dropped (22%–89%, median 63%), none rose, and the category *shares* barely moved (Greenway 56.5%→52.7%), so mix percentages were roughly right while absolute km were not. Population, area, density and pollution columns were never affected (they come from the polygon / other sources) and came out identical; bike-amenity counts are now clipped too and moved slightly (La Rioja parking spots 249→232, bike shops 10→9). Roads are cut in the metric CRS (`geometry_utm` column, next to `centroid_utm`): fully inside → kept whole, outside → dropped, crossing → cut at the border, zero-length touches dropped. Two consequences: (1) the `--max-segments` guard now counts only roads *inside* the boundary instead of the rectangle's, so far fewer big cities should be skipped (before, Madrid's rectangle held 229,702 segments; Barcelona, Valencia, Sevilla, Málaga, Zaragoza and ~11 other large cities hit the 30,000 default and came out with zero km). (2) A road lying exactly on a border can still be counted in both neighbours, since GADM and OSM boundaries don't coincide — a small residual, much smaller than the old error, but not zero.
 
