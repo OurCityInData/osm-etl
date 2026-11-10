@@ -78,6 +78,33 @@ every unmatched (province, municipality) pair rather than silently dropping
 them, and leaves `population`/`population_density` as NaN (not 0.0) for
 those rows - save_table_png() already renders NaN as a blank cell, so this
 degrades to "no data shown" rather than a misleading zero.
+
+One INE municipality, one population (added 2026-11):
+GADM stores some municipalities as several polygon rows - a main body plus
+small separate pieces (islands, exclaves, parts in another comarca): 54 names
+on 58 extra rows in Spain, e.g. Valencia 133.2 + 2.9 km2, Zaragoza
+1,058.7 + 4.3, Palma 197.6 (+ Cabrera) + 14.1. Matching by name used to give
+EVERY piece the municipality's full population, so ~4.3 million people were
+counted twice (and the small pieces showed absurd densities, e.g. Alicante
+678,187/km2). This module now:
+  * resolves each GADM row to an INE municipality code (CPRO + CMUN) -
+    assign_ine_codes() - and puts the population on ONE row per code, the
+    largest-area piece; the other pieces keep `ine_code` but get NaN
+    population. A name that is ambiguous within a province (two INE
+    municipalities sharing a candidate name) is left unmatched, never
+    guessed.
+  * checks, before any road is processed, that population reconciles:
+    people placed on polygons + people on INE municipalities with no polygon
+    == INE's total (reconcile_population()). A double-assignment raises
+    instead of silently inflating totals.
+  * applies GADM_TO_INE_NAME_ALIASES for names the generic rules cannot
+    bridge (currently Palma and Els Alamus).
+municipalities.py then merges a split municipality's pieces back into one
+output row (municipality_group_key() gives the grouping).
+Verified (2026-11) against the live GADM pull: of the 54 duplicated names,
+48 match exactly one INE municipality, 0 match two or more, 4 are
+joint-administration areas that are not INE municipalities, and the last 2
+are Palma and Els Alamus (the aliases above).
 """
 
 import re
@@ -86,10 +113,22 @@ import zipfile
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import requests
 
 INE_POBMUN_URL = 'https://www.ine.es/pob_xls/pobmun.zip'
+
+# GADM (province key, municipality key) -> INE municipality key, for names
+# the generic rules (article reorder, accents, '/' halves) cannot bridge.
+# Both sides are _normalize()d forms. Found by checking every INE municipality
+# that no GADM row matched (2026-11) - extend this as more are verified.
+GADM_TO_INE_NAME_ALIASES = {
+    # GADM 'PalmadeMallorca' (Baleares) vs INE 'Palma' (Balears, Illes): 434,786 people
+    ('baleares', 'palmademallorca'): 'palma',
+    # GADM 'ElAlamus' (Lleida) vs INE 'Alamus, Els' -> 'Els Alamus'
+    ('lleida', 'elalamus'): 'elsalamus',
+}
 
 # Trailing ", <article>" alphabetization suffix INE uses for some province
 # and municipality names (Castilian/Catalan/Balearic/Galician articles).
@@ -190,44 +229,152 @@ def fetch_ine_population(year: int, data_dir: Path) -> pd.DataFrame:
         'NOMBRE': 'municipality_name',
         f'POB{yy}': 'population',
     })
-    return df[['province_name', 'municipality_name', 'population']]
+    # INE's official municipality code: 2-digit province + 3-digit municipality.
+    df['ine_code'] = df['CPRO'].str.zfill(2) + df['CMUN'].str.zfill(3)
+    return df[['ine_code', 'province_name', 'municipality_name', 'population']]
+
+
+def _ine_codes(ine_df: pd.DataFrame) -> pd.Series:
+    """The INE code per row of ine_df (positional), synthesizing a stable
+    stand-in from province+name when the frame has no `ine_code` column
+    (older callers / tests that only pass the three name/population columns)."""
+    if 'ine_code' in ine_df.columns:
+        return ine_df['ine_code'].astype(str).reset_index(drop=True)
+    return (ine_df['province_name'].astype(str) + '|' + ine_df['municipality_name'].astype(str)).reset_index(drop=True)
+
+
+def assign_ine_codes(municipalities_gdf: gpd.GeoDataFrame, ine_df: pd.DataFrame) -> pd.Series:
+    """
+    The INE municipality code for every row of municipalities_gdf (NaN where
+    none can be established), indexed like municipalities_gdf.
+
+    A GADM row resolves to a code only when exactly ONE INE municipality in
+    its province carries that normalized name (after GADM_TO_INE_NAME_ALIASES).
+    Zero candidates -> unmatched; two or more -> ambiguous, also unmatched
+    (the old name->population dict silently let the last one win).
+    """
+    codes = _ine_codes(ine_df)
+    lookup = {}
+    for code, prov, name in zip(codes, ine_df['province_name'], ine_df['municipality_name']):
+        pk = _normalize_province(prov)
+        for cand in _municipality_candidates(name):
+            lookup.setdefault((pk, cand), set()).add(code)
+
+    prov_keys = municipalities_gdf['NAME_2'].map(_normalize_province)
+    muni_keys = municipalities_gdf['NAME_4'].map(lambda s: _normalize(_reorder_trailing_article(s)))
+    resolved, ambiguous = [], []
+    for pk, mk in zip(prov_keys, muni_keys):
+        found = lookup.get((pk, GADM_TO_INE_NAME_ALIASES.get((pk, mk), mk)), set())
+        if len(found) == 1:
+            resolved.append(next(iter(found)))
+        else:
+            resolved.append(np.nan)
+            if len(found) > 1:
+                ambiguous.append((pk, mk))
+    if ambiguous:
+        print(f'WARNING: {len(ambiguous)} GADM rows match more than one INE municipality in their '
+              f'province and were left unmatched: {ambiguous[:5]}')
+    return pd.Series(resolved, index=municipalities_gdf.index, dtype=object)
+
+
+def municipality_group_key(municipalities_gdf: gpd.GeoDataFrame) -> pd.Series:
+    """
+    A key shared by every GADM row (piece) of the same municipality, indexed
+    like municipalities_gdf: 'ine:<code>' when the row resolved to an INE
+    municipality, else 'name:<province>|<name>' so unmatched same-name pieces
+    (e.g. joint-administration areas) still group together.
+    """
+    pk = municipalities_gdf['NAME_2'].map(_normalize_province)
+    mk = municipalities_gdf['NAME_4'].map(lambda s: _normalize(_reorder_trailing_article(s)))
+    name_key = 'name:' + pk + '|' + mk
+    if 'ine_code' not in municipalities_gdf.columns:
+        return name_key
+    code = municipalities_gdf['ine_code']
+    return pd.Series(np.where(code.notna(), 'ine:' + code.astype(str), name_key), index=municipalities_gdf.index)
+
+
+def reconcile_population(matched: gpd.GeoDataFrame, ine_df: pd.DataFrame, *, tolerance: float = 0.5) -> dict:
+    """
+    Invariant check for the INE join: people placed on polygons + people on INE
+    municipalities that received no polygon == INE's total. It can only fail if
+    a municipality's population was placed twice (or an INE row was dropped),
+    which is exactly the double-counting bug this guards against - so a failure
+    raises instead of letting inflated totals through. Returns a report dict
+    (also printed as one line).
+    """
+    placed = matched.loc[matched['population'].notna(), 'ine_code']
+    if placed.duplicated().any():
+        dup = placed[placed.duplicated()].iloc[0]
+        raise ValueError(f'INE municipality {dup} received population on more than one GADM polygon')
+    codes = _ine_codes(ine_df)
+    ine_total = float(ine_df['population'].sum())
+    assigned = float(matched['population'].sum())
+    unplaced = ine_df.loc[~codes.isin(set(placed)).values]
+    gap = ine_total - assigned - float(unplaced['population'].sum())
+    if abs(gap) > tolerance:
+        raise ValueError(f'INE population does not reconcile: total {ine_total:,.0f}, placed {assigned:,.0f}, '
+                         f'unplaced {unplaced["population"].sum():,.0f}, gap {gap:,.0f}')
+    report = dict(ine_total=ine_total, assigned=assigned, unplaced_count=len(unplaced),
+                  unplaced_population=float(unplaced['population'].sum()))
+    print(f'INE reconciliation OK: {assigned:,.0f} of {ine_total:,.0f} people placed on polygons; '
+          f'{len(unplaced)} INE municipalities ({report["unplaced_population"]:,.0f} people) have no GADM polygon.')
+    return report
 
 
 def match_ine_to_gadm(municipalities_gdf: gpd.GeoDataFrame, ine_df: pd.DataFrame) -> gpd.GeoDataFrame:
     """
-    Joins INE's population table onto municipalities_gdf by normalized
-    (province, municipality) name - see module docstring for the matching
-    rules and their verified 97.9% hit rate. Expects municipalities_gdf to
-    carry GADM's NAME_2 (province) and NAME_4 (municipality) columns -
+    Resolves every GADM row to an INE municipality (assign_ine_codes: normalized
+    province + municipality name, plus GADM_TO_INE_NAME_ALIASES) and places that
+    municipality's population on ONE row - the largest-area piece when GADM
+    splits it over several polygons. Expects municipalities_gdf to carry GADM's
+    NAME_2 (province) and NAME_4 (municipality) columns, and ideally `area_km2`
+    (used only to rank pieces; computed equal-area from the geometry if absent).
     Spain-only, unlike population.py's compute_population_stats() which is
     generic across all 5 countries.
 
-    Adds a `population` column (float, NaN where unmatched - never 0.0, so
-    a real-but-unmatched municipality isn't confused with a genuinely empty
-    one). Returns a copy; does not mutate the input in place. Prints every
-    unmatched (province, municipality) pair rather than dropping them
-    silently.
+    Adds three columns:
+      ine_code   INE code of the municipality this row belongs to (NaN if none)
+      ine_main   True for the row that carries the population (a municipality's
+                 largest piece, or any unmatched row); False for extra pieces
+      population float; NaN on unmatched rows AND on extra pieces (never 0.0, so
+                 a real-but-unmatched municipality isn't confused with an empty one)
+    Returns a copy; does not mutate the input. Prints unmatched pairs and
+    runs reconcile_population() before returning.
     """
-    lookup = {}
-    for _, row in ine_df.iterrows():
-        prov_key = _normalize_province(row['province_name'])
-        for muni_key in _municipality_candidates(row['municipality_name']):
-            lookup[(prov_key, muni_key)] = row['population']
-
     out = municipalities_gdf.copy()
-    prov_keys = out['NAME_2'].apply(_normalize_province)
-    muni_keys = out['NAME_4'].apply(lambda s: _normalize(_reorder_trailing_article(s)))
-    out['population'] = [
-        lookup.get((p, m), float('nan')) for p, m in zip(prov_keys, muni_keys)
-    ]
+    out['ine_code'] = assign_ine_codes(out, ine_df)
 
-    unmatched = out[out['population'].isna()]
+    codes = _ine_codes(ine_df)
+    pop_by_code = pd.Series(ine_df['population'].to_numpy(), index=codes.to_numpy())
+    if pop_by_code.index.duplicated().any():
+        raise ValueError('ine_df has duplicate INE codes')
+
+    if 'area_km2' in out.columns:
+        area = out['area_km2']
+    else:
+        try:
+            area = out.geometry.to_crs('EPSG:6933').area / 1e6     # equal-area, ranking only
+        except Exception:
+            area = out.geometry.area
+    ranked = out.assign(_area=area).sort_values('_area', ascending=False, kind='stable')
+    first_of_code = ~ranked['ine_code'].duplicated()
+    is_main = (first_of_code | ranked['ine_code'].isna()).reindex(out.index)
+    out['ine_main'] = is_main.astype(bool)
+    pop = out['ine_code'].map(pop_by_code)
+    out['population'] = pop.where(out['ine_main'], np.nan).astype(float)
+
+    unmatched = out[out['ine_code'].isna()]
     if len(unmatched) > 0:
         pct = len(unmatched) / len(out) * 100
         print(f'WARNING: {len(unmatched)}/{len(out)} municipalities ({pct:.1f}%) had no INE '
               f'population match - Population/Population density left blank for these '
-              f'(see cycling_analysis/ine.py\'s module docstring and CLAUDE.md Known gaps).')
+              f'(see the cycling_analysis/ine.py module docstring and CLAUDE.md Known gaps).')
         sample = list(zip(unmatched['NAME_2'], unmatched['NAME_4']))[:10]
         print(f'  Sample unmatched (province, municipality): {sample}')
+    pieces = int((~out['ine_main']).sum())
+    if pieces:
+        print(f'{pieces} GADM rows are extra pieces of a split municipality: population placed on the '
+              f'largest piece only (merged back into one row in the outputs - see municipalities.py).')
 
+    reconcile_population(out, ine_df)
     return out
