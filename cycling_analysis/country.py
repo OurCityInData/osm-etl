@@ -69,7 +69,7 @@ from .population import (
     fetch_population_raster,
 )
 from .ine import fetch_ine_population, match_ine_to_gadm
-from .municipalities import merge_municipality_pieces
+from .municipalities import EXTRA_COLUMNS, apply_ine_names, merge_municipality_pieces
 
 # pollution.py is Spain-only for now (see CLAUDE.md's Known gaps) - every
 # other country gets blank/NaN columns 1-10, same as a Spanish municipality
@@ -464,6 +464,7 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
     # INE_POPULATION_COUNTRIES above). Both paths compute once per country/
     # run, before the per-municipality loop, same "computed in bulk" shape
     # as area_km2 above rather than per-row like the pollution columns.
+    ine_df = None
     if country in INE_POPULATION_COUNTRIES:
         print(f'Fetching INE population data ({population_year}) ...')
         ine_df = fetch_ine_population(population_year, data_dir)
@@ -767,6 +768,12 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         if len(summary) < n_polygons:
             print(f'Merged {n_polygons - len(summary)} extra polygon pieces into their municipalities '
                   f'({n_polygons} polygon rows -> {len(summary)} municipalities).')
+        # GADM strips spaces from many Spanish names ('PalmadeMallorca'); use INE's
+        # reading-order name wherever the row has an INE code (see municipalities.py).
+        summary = apply_ine_names(summary, ine_df)
+        n_fixed = int((summary['Name source'] == 'ine').sum())
+        print(f'Municipality names: {n_fixed} of {len(summary)} taken from INE '
+              f'({len(summary) - n_fixed} keep the GADM name - no INE match).')
 
     summary.insert(6, 'Total Cycling Path km', summary[cat_cols].sum(axis=1).round(1))
     summary = summary.sort_values(['Region', 'Total Cycling Path km'], ascending=[True, False]).reset_index(drop=True)
@@ -775,9 +782,9 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
     # gadm_id), not something a human reader of the CSV/PNG table needs to see -
     # dropped from the human-facing outputs only; `summary` (with GADM ID intact)
     # is still what's returned and what save_database_csv() gets below.
-    # The merge bookkeeping columns (INE code, GADM IDs, Parts) are internal too
-    # and only go to the database CSV.
-    display_summary = summary.drop(columns=[c for c in ['GADM ID', 'INE code', 'GADM IDs', 'Parts']
+    # The merge/naming bookkeeping columns (INE code, GADM IDs, Parts, GADM name,
+    # Name source) are internal too and only go to the database CSV.
+    display_summary = summary.drop(columns=[c for c in ['GADM ID'] + EXTRA_COLUMNS
                                             if c in summary.columns])
 
     out_path = f'{run_name}_cycling_by_municipality.csv'

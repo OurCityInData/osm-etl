@@ -128,14 +128,93 @@ GADM_TO_INE_NAME_ALIASES = {
     ('baleares', 'palmademallorca'): 'palma',
     # GADM 'ElAlamus' (Lleida) vs INE 'Alamus, Els' -> 'Els Alamus'
     ('lleida', 'elalamus'): 'elsalamus',
+    # --- verified 2026-11: same province, same place under a Spanish/regional-language variant,
+    # --- polygon located where the real town is (see CLAUDE.md, 'Readable municipality names').
+    ('castellon', 'villarreal'): 'vilareal',   # Vila-real <- GADM Villarreal (53,623 people)
+    ('baleares', 'santaeulaliadelrio'): 'santaeulariadesriu',   # Santa Eulària des Riu <- GADM SantaEulaliadelRío (42,479 people)
+    ('baleares', 'mahon'): 'mao',   # Maó <- GADM Mahón (30,666 people)
+    ('castellon', 'almazora'): 'almassora',   # Almassora <- GADM Almazora (29,159 people)
+    ('alicante', 'calpe'): 'calp',   # Calp <- GADM Calpe (27,616 people)
+    ('navarra', 'egues'): 'eguesibar',   # Valle de Egüés/Eguesibar <- GADM Egüés (22,825 people)
+    ('vizcaya', 'mungai'): 'mungia',   # Mungia <- GADM Mungai (18,129 people)
+    ('tarragona', 'santcarlesdelarapita'): 'larapita',   # La Ràpita <- GADM SantCarlesdelaRàpita (16,119 people)
+    ('vizcaya', 'sopelana'): 'sopela',   # Sopela <- GADM Sopelana (15,048 people)
+    ('navarra', 'estella'): 'estellalizarra',   # Estella-Lizarra <- GADM Estella (14,317 people)
+    ('laspalmas', 'santamariadeguiadegrancana'): 'santamariadeguiadegrancanaria',   # Santa María de Guía de Gran Canaria <- GADM SantaMaríadeGuíadeGranCana (14,311 people)
+    ('girona', 'castellplatjadaro'): 'castelldaroplatjadaroisagaro',   # Castell d'Aro, Platja d'Aro i s'Agaró <- GADM Castell-Platjad'Aro (12,982 people)
+    ('vizcaya', 'etxebarrianteiglesiadesanes'): 'etxebarri',   # Etxebarri <- GADM Etxebarri,AnteiglesiadeSanEs (12,038 people)
+    ('barcelona', 'biguesiriells'): 'biguesiriellsdelfai',   # Bigues i Riells del Fai <- GADM BiguesiRiells (10,139 people)
+    ('valencia', 'monserrat'): 'montserrat',   # Montserrat <- GADM Monserrat (10,062 people)
+    ('valencia', 'rafelbunol'): 'rafelbunyol',   # Rafelbunyol <- GADM Rafelbuñol (9,974 people)
+    ('vizcaya', 'abantoyciervanaabantozierben'): 'abantoyciervanaabantozierbena',   # Abanto y Ciérvana-Abanto Zierbena <- GADM AbantoyCiérvana-AbantoZierben (9,379 people)
+    ('navarra', 'noain'): 'noainelortzibar',   # Noáin (Valle de Elorz)/Noain (Elortzibar) <- GADM Noáin (8,486 people)
+    ('tarragona', 'rodadebara'): 'rodadebera',   # Roda de Berà <- GADM RodadeBarà (8,260 people)
+    ('granada', 'otura'): 'villadeotura',   # Villa de Otura <- GADM Otura (7,696 people)
+    ('laspalmas', 'sannicolasdetolentino'): 'laaldeadesannicolas',   # La Aldea de San Nicolás <- GADM SanNicolásdeTolentino (7,401 people)
+    ('tarragona', 'vandellosilhospitaletdelin'): 'vandellosilhospitaletdelinfant',   # Vandellòs i l'Hospitalet de l'Infant <- GADM Vandellòsil'Hospitaletdel'In (7,143 people)
+    ('segovia', 'sanildefonso'): 'realsitiodesanildefonso',   # Real Sitio de San Ildefonso <- GADM SanIldefonso (5,217 people)
+    ('barcelona', 'elpapio'): 'elpapiol',   # El Papiol <- GADM ElPapio (4,404 people)
+    ('burgos', 'villarcayodemerindaddecastil'): 'villarcayodemerindaddecastillalavieja',   # Villarcayo de Merindad de Castilla la Vieja <- GADM VillarcayodeMerindaddeCastil (4,103 people)
+    ('navarra', 'orcoyen'): 'orkoien',   # Orkoien <- GADM Orcoyen (4,098 people)
+    ('baleares', 'vilafrancdebonany'): 'vilafrancadebonany',   # Vilafranca de Bonany <- GADM VilafrancdeBonany (3,929 people)
+    ('tarragona', 'lesplugadefrancoliesplugad'): 'lesplugadefrancoli',   # L'Espluga de Francolí <- GADM L'EsplugadeFrancolí|Esplugad (3,863 people)
+    ('sevilla', 'lalantejuela'): 'lantejuela',   # Lantejuela <- GADM LaLantejuela (3,857 people)
+    ('guipuzcoa', 'soraluze'): 'soraluzeplacenciadelasarmas',   # Soraluze-Placencia de las Armas <- GADM Soraluze (3,857 people)
+    ('alava', 'oyon'): 'oyonoion',   # Oyón-Oion <- GADM Oyón (3,476 people)
+    ('alicante', 'jalon'): 'xalo',   # Xaló <- GADM Jalón (3,104 people)
+    ('valencia', 'genoves'): 'elgenoves',   # El Genovés <- GADM Genovés (2,822 people)
+    ('valencia', 'realdegandia'): 'elrealdegandia',   # El Real de Gandia <- GADM RealdeGandía (2,722 people)
+    ('valencia', 'benisano'): 'benissano',   # Benissanó <- GADM Benisanó (2,449 people)
+    ('alava', 'legutiano'): 'legutio',   # Legutio <- GADM Legutiano (2,094 people)
+    ('valencia', 'masalaves'): 'massalaves',   # Massalavés <- GADM Masalavés (1,905 people)
+    ('valencia', 'alqueriadelacondesa'): 'lalqueriadelacomtessa',   # L'Alqueria de la Comtessa <- GADM AlqueríadelaCondesa (1,547 people)
+    ('girona', 'cruillesmonellsisantsadurni'): 'cruillesmonellsisantsadurnidelheura',   # Cruïlles, Monells i Sant Sadurní de l'Heura <- GADM Cruïlles,MonellsiSantSadurní (1,350 people)
+    ('zaragoza', 'lajoyosaj'): 'lajoyosa',   # La Joyosa <- GADM LaJoyosaJ (1,156 people)
+    ('castellon', 'benlloch'): 'benlloc',   # Benlloc <- GADM Benlloch (1,143 people)
+    ('valencia', 'algimiadealfara'): 'algimiadalfara',   # Algímia d'Alfara <- GADM AlgimiadeAlfara (1,115 people)
+    ('alava', 'arrazuaubarrundia'): 'arratzuaubarrundia',   # Arratzua-Ubarrundia <- GADM Arrazua-Ubarrundia (1,056 people)
+    ('castellon', 'benasal'): 'benassal',   # Benassal <- GADM Benasal (1,048 people)
+    ('vizcaya', 'arrankudiaga'): 'arrankudiagazollo',   # Arrankudiaga-Zollo <- GADM Arrankudiaga (1,018 people)
+    ('castellon', 'lesuseras'): 'useras',   # Les Useres/Useras <- GADM LesUseras (954 people)
+    ('valencia', 'novele'): 'novetle',   # Novetlè <- GADM Novelé (872 people)
+    ('baleares', 'deya'): 'deia',   # Deià <- GADM Deyá (741 people)
+    ('castellon', 'chert'): 'xert',   # Xert <- GADM Chert (702 people)
+    ('cordoba', 'losblazque'): 'losblazquez',   # Los Blázquez <- GADM LosBlázque (619 people)
+    ('alicante', 'binigembla'): 'benigembla',   # Benigembla <- GADM Binigembla (590 people)
+    ('alicante', 'valldegallinera'): 'lavalldegallinera',   # La Vall de Gallinera <- GADM ValldeGallinera (583 people)
+    ('valencia', 'guadasequies'): 'guadassequies',   # Guadasséquies <- GADM Guadasequies (478 people)
+    ('madrid', 'gargantilladellozoyaypinilla'): 'gargantilladellozoyaypinilladebuitrago',   # Gargantilla del Lozoya y Pinilla de Buitrago <- GADM GargantilladelLozoyayPinilla (396 people)
+    ('castellon', 'vistabelladelmaestrazgo'): 'vistabelladelmaestrat',   # Vistabella del Maestrat <- GADM VistabelladelMaestrazgo (354 people)
+    ('huesca', 'torla'): 'torlaordesa',   # Torla-Ordesa <- GADM Torla (342 people)
+    ('vizcaya', 'garay'): 'garai',   # Garai <- GADM Garay (332 people)
+    ('zaragoza', 'sanmartindelavirgendemonca'): 'sanmartindelavirgendemoncayo',   # San Martín de la Virgen de Moncayo <- GADM SanMartíndelaVirgendeMonca (266 people)
+    ('alicante', 'valldeebo'): 'lavalldebo',   # La Vall d'Ebo <- GADM ValldeEbo (231 people)
+    ('navarra', 'atez'): 'atetz',   # Atetz <- GADM Atez (227 people)
+    ('madrid', 'horcajodelasierra'): 'horcajodelasierraaoslos',   # Horcajo de la Sierra-Aoslos <- GADM HorcajodelaSierra (219 people)
+    ('valencia', 'benisuera'): 'benissuera',   # Benissuera <- GADM Benisuera (196 people)
+    ('navarra', 'orbaitzeta'): 'orbaizeta',   # Orbaizeta <- GADM Orbaitzeta (186 people)
+    ('castellon', 'aresdelmaestre'): 'aresdelmaestrat',   # Ares del Maestrat <- GADM AresdelMaestre (181 people)
+    ('castellon', 'torreendomenech'): 'latorredendomenec',   # La Torre d'en Doménec <- GADM TorreEndoménech (177 people)
+    ('avila', 'sanmartindelavegadelalberc'): 'sanmartindelavegadelalberche',   # San Martín de la Vega del Alberche <- GADM SanMartíndelaVegadelAlberc (163 people)
+    ('navarra', 'oitz'): 'oiz',   # Oiz <- GADM Oitz (129 people)
+    ('segovia', 'montejodelavegadelaserrezu'): 'montejodelavegadelaserrezuela',   # Montejo de la Vega de la Serrezuela <- GADM MontejodelaVegadelaSerrezu (121 people)
+    ('castellon', 'sarratella'): 'laserratella',   # La Serratella <- GADM Sarratella (113 people)
+    ('burgos', 'santamariarivarredonda'): 'santamariaribarredonda',   # Santa María Ribarredonda <- GADM SantaMaríaRivarredonda (97 people)
+    ('castellon', 'herbes'): 'herbers',   # Herbers <- GADM Herbés (68 people)
+    ('teruel', 'villanuevadelrebollardelasi'): 'villanuevadelrebollardelasierra',   # Villanueva del Rebollar de la Sierra <- GADM VillanuevadelRebollardelaSi (49 people)
+    ('burgos', 'castrillomatajudios'): 'castrillomotadejudios',   # Castrillo Mota de Judíos <- GADM CastrilloMatajudíos (48 people)
 }
 
 # Trailing ", <article>" alphabetization suffix INE uses for some province
 # and municipality names (Castilian/Catalan/Balearic/Galician articles).
 # Order matters only in that longer alternatives (e.g. 'Illes' vs 'Les')
-# don't collide here - none do.
+# don't collide here - none do. Galician O/As/Os added 2026-11: without them
+# 20 Galician municipalities ('Porriño, O', 'Grove, O', 'Pontes de García
+# Rodríguez, As', ...) never matched their GADM rows ('OPorriño', ...).
+# The article must be the WHOLE tail after the comma, so a comma that is part of
+# the name ("Castell d'Aro, Platja d'Aro i s'Agaró") is left alone.
 _ARTICLE_SUFFIX = re.compile(
-    r"^(.*),\s*(El|La|Los|Las|Lo|Els|Les|Illes|Es|Sa|Ses|A|L')$",
+    r"^(.*),\s*(El|La|Los|Las|Lo|Els|Les|Illes|Es|Sa|Ses|A|O|As|Os|L')$",
     re.IGNORECASE,
 )
 
@@ -232,6 +311,30 @@ def fetch_ine_population(year: int, data_dir: Path) -> pd.DataFrame:
     # INE's official municipality code: 2-digit province + 3-digit municipality.
     df['ine_code'] = df['CPRO'].str.zfill(2) + df['CMUN'].str.zfill(3)
     return df[['ine_code', 'province_name', 'municipality_name', 'population']]
+
+
+def ine_display_name(name: str) -> str:
+    """
+    INE's municipality name as it should be READ, not sorted: the trailing
+    ", <article>" is moved back to the front and capitalized ('Tres Villas, Las'
+    -> 'Las Tres Villas', "Orxa, l'" -> "L'Orxa"). A bilingual 'A/B' name keeps
+    BOTH halves, each fixed on its own ('Vila Joiosa, la/Villajoyosa' ->
+    'La Vila Joiosa/Villajoyosa'): 9 INE names carry the article on the first half.
+    """
+    parts = []
+    for part in str(name).split('/'):
+        part = part.strip()
+        moved = _reorder_trailing_article(part)
+        if moved != part:
+            moved = moved[0].upper() + moved[1:]
+        parts.append(moved)
+    return '/'.join(parts)
+
+
+def ine_names_by_code(ine_df: pd.DataFrame) -> pd.Series:
+    """INE code -> display name (ine_display_name) for every row of ine_df."""
+    codes = _ine_codes(ine_df)
+    return pd.Series([ine_display_name(n) for n in ine_df['municipality_name']], index=codes.to_numpy())
 
 
 def _ine_codes(ine_df: pd.DataFrame) -> pd.Series:
