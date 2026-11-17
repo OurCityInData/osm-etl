@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from cycling_analysis.area_classification import CATEGORIES
 from cycling_analysis.bike_amenities import AMENITY_METRIC_COLUMNS
-from cycling_analysis.municipalities import merge_municipality_pieces
+from cycling_analysis.municipalities import apply_ine_names, merge_municipality_pieces
 from cycling_analysis.pollution import POLLUTION_COLUMNS
 
 
@@ -134,3 +134,62 @@ def test_merge_does_not_mutate_input_and_keeps_first_appearance_order():
 
     pd.testing.assert_frame_equal(summary, before)
     assert out['Municipality'].tolist() == ['Valencia', 'Sagunto']
+
+
+def _named_summary():
+    summary = _summary([
+        ('G1', 'PalmadeMallorca', 197.6, 434_786.0, 10.0, 1, 5.0, 0),
+        ('G2', 'LucainenadelasTorres', 80.0, 600.0, 3.0, 0, 5.0, 0),
+        ('G3', 'ComunidaddeBenataeyTorresde', 4.4, np.nan, 1.0, 0, np.nan, 0),
+    ])
+    summary['INE code'] = ['07040', '04074', np.nan]
+    return summary
+
+
+def _ine_names():
+    return pd.DataFrame({
+        'ine_code': ['07040', '04074'],
+        'province_name': ['Balears, Illes', 'Almería'],
+        'municipality_name': ['Palma', 'Lucainena de las Torres'],
+        'population': [434_786, 600],
+    })
+
+
+def test_apply_ine_names_replaces_squashed_gadm_names():
+    out = apply_ine_names(_named_summary(), _ine_names()).set_index('GADM ID')
+
+    assert out.loc['G1', 'Municipality'] == 'Palma'
+    assert out.loc['G2', 'Municipality'] == 'Lucainena de las Torres'
+
+
+def test_apply_ine_names_keeps_the_original_and_records_the_source():
+    out = apply_ine_names(_named_summary(), _ine_names()).set_index('GADM ID')
+
+    assert out.loc['G2', 'Municipality (GADM name)'] == 'LucainenadelasTorres'
+    assert out.loc['G2', 'Name source'] == 'ine'
+
+
+def test_apply_ine_names_leaves_unmatched_rows_untouched():
+    out = apply_ine_names(_named_summary(), _ine_names()).set_index('GADM ID')
+
+    assert out.loc['G3', 'Municipality'] == 'ComunidaddeBenataeyTorresde'      # not guessed
+    assert out.loc['G3', 'Name source'] == 'gadm'
+
+
+def test_apply_ine_names_keeps_bilingual_names_as_ine_writes_them():
+    summary = _named_summary().iloc[:1].copy()
+    ine = pd.DataFrame({'ine_code': ['07040'], 'province_name': ['Balears, Illes'],
+                        'municipality_name': ['Palma/Palma de Mallorca'], 'population': [1]})
+
+    out = apply_ine_names(summary, ine)
+
+    assert out['Municipality'].iloc[0] == 'Palma/Palma de Mallorca'
+
+
+def test_apply_ine_names_does_not_mutate_input():
+    summary = _named_summary()
+    before = summary.copy()
+
+    apply_ine_names(summary, _ine_names())
+
+    pd.testing.assert_frame_equal(summary, before)

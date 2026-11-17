@@ -21,6 +21,14 @@ merge_municipality_pieces() folds a split municipality's rows into one:
 Three bookkeeping columns are appended to the merged rows: `INE code`,
 `GADM IDs` (every piece, ';'-joined, largest first) and `Parts` (1 for an
 unsplit municipality). Rows of unsplit municipalities pass through unchanged.
+
+Readable names (apply_ine_names, added 2026-11): GADM strips the spaces from
+many Spanish names ('PalmadeMallorca', 'LucainenadelasTorres'; 3,402 of 8,209
+rows) and cuts some off at ~27 characters, so `Municipality` is replaced by
+INE's name wherever the row has an INE code, with the original kept in
+`Municipality (GADM name)` and the provenance in `Name source` ('ine' / 'gadm').
+Bilingual INE names ('Valencia/València') are kept exactly as INE writes them.
+Rows with no INE code keep GADM's name, spaces and all - nothing is guessed.
 """
 
 import numpy as np
@@ -28,11 +36,13 @@ import pandas as pd
 
 from .area_classification import CATEGORIES
 from .bike_amenities import AMENITY_METRIC_COLUMNS
-from .ine import municipality_group_key
+from .ine import ine_names_by_code, municipality_group_key
 
 AREA_COL = 'Municipality area (km²)'
 STATION_COL = 'Station count'
-EXTRA_COLUMNS = ['INE code', 'GADM IDs', 'Parts']
+GADM_NAME_COL = 'Municipality (GADM name)'
+NAME_SOURCE_COL = 'Name source'
+EXTRA_COLUMNS = ['INE code', 'GADM IDs', 'Parts', GADM_NAME_COL, NAME_SOURCE_COL]
 
 
 def merge_municipality_pieces(summary: pd.DataFrame, municipalities, *, gid_col: str) -> pd.DataFrame:
@@ -79,3 +89,19 @@ def merge_municipality_pieces(summary: pd.DataFrame, municipalities, *, gid_col:
     out['INE code'] = out['GADM ID'].map(code_by_gid) if code_by_gid is not None else np.nan
     out['Parts'] = out['Parts'].astype(int)
     return out.drop(columns=['_key', '_order'])
+
+
+def apply_ine_names(summary: pd.DataFrame, ine_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Replace `Municipality` with INE's reading-order name where the row has an
+    `INE code` (see ine.ine_display_name); keep the original GADM name in
+    `Municipality (GADM name)` and record `Name source` ('ine' or 'gadm').
+    Returns a copy; rows without an INE code are left exactly as they were.
+    """
+    out = summary.copy()
+    out[GADM_NAME_COL] = out['Municipality']
+    ine_name = out['INE code'].map(ine_names_by_code(ine_df))
+    has_ine = ine_name.notna()
+    out.loc[has_ine, 'Municipality'] = ine_name[has_ine]
+    out[NAME_SOURCE_COL] = np.where(has_ine, 'ine', 'gadm')
+    return out

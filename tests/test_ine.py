@@ -17,10 +17,15 @@ from shapely.geometry import Point
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from cycling_analysis.ine import (
+    GADM_TO_INE_NAME_ALIASES,
     _municipality_candidates,
+    _normalize,
     _normalize_province,
     _reorder_trailing_article,
     assign_ine_codes,
+    fetch_ine_population,
+    ine_display_name,
+    ine_names_by_code,
     match_ine_to_gadm,
     municipality_group_key,
     reconcile_population,
@@ -206,3 +211,86 @@ def test_reconcile_population_raises_on_double_assignment():
 
     with pytest.raises(ValueError, match='more than one'):
         reconcile_population(bad, ine)
+
+
+# --- readable INE names (display) -------------------------------------------------
+
+def test_reorder_handles_galician_articles_o_as_os():
+    assert _reorder_trailing_article('Porriño, O') == 'O Porriño'
+    assert _reorder_trailing_article('Pontes de García Rodríguez, As') == 'As Pontes de García Rodríguez'
+    assert _reorder_trailing_article('Blancos, Os') == 'Os Blancos'
+
+
+def test_comma_that_is_part_of_the_name_is_left_alone():
+    name = "Castell d'Aro, Platja d'Aro i s'Agaró"
+
+    assert _reorder_trailing_article(name) == name
+    assert ine_display_name(name) == name
+
+
+def test_display_name_moves_the_article_back_and_capitalizes_it():
+    assert ine_display_name('Tres Villas, Las') == 'Las Tres Villas'
+    assert ine_display_name("Orxa, l'") == "L'Orxa"
+    assert ine_display_name('Alamús, Els') == 'Els Alamús'
+    assert ine_display_name('Palma') == 'Palma'
+
+
+def test_display_name_keeps_bilingual_names_and_fixes_each_half():
+    assert ine_display_name('Valencia/València') == 'Valencia/València'
+    assert ine_display_name('Vila Joiosa, la/Villajoyosa') == 'La Vila Joiosa/Villajoyosa'
+
+
+def test_ine_names_by_code_is_indexed_by_the_code():
+    ine = _ine([('07040', 'Balears, Illes', 'Palma', 1), ('25012', 'Lleida', 'Alamús, Els', 2)])
+
+    names = ine_names_by_code(ine)
+
+    assert names['07040'] == 'Palma' and names['25012'] == 'Els Alamús'
+
+
+def test_galician_municipality_now_matches_its_gadm_row():
+    gdf = _muni_gdf_with_area([('Galicia', 'Pontevedra', 'OPorriño', 60.0)])
+    ine = _ine([('36039', 'Pontevedra', 'Porriño, O', 20_965)])
+
+    out = match_ine_to_gadm(gdf, ine)
+
+    assert out['ine_code'].tolist() == ['36039'] and out['population'].iloc[0] == 20_965
+
+
+# --- the hand-verified alias table ---------------------------------------------------
+
+def test_mao_matches_its_gadm_spelling_mahon():
+    gdf = _muni_gdf_with_area([('IslasBaleares', 'Baleares', 'Mahón', 119.6)])
+    ine = _ine([('07032', 'Balears, Illes', 'Maó', 30_666)])
+
+    out = match_ine_to_gadm(gdf, ine)
+
+    assert out['ine_code'].tolist() == ['07032'] and out['population'].iloc[0] == 30_666
+
+
+_DATA = os.path.join(os.path.dirname(__file__), '..', 'data')
+_HAVE_DATA = (os.path.exists(os.path.join(_DATA, 'gadm41_ESP_4.geojson'))
+              and os.path.exists(os.path.join(_DATA, 'pobmun25.xlsx')))
+
+
+@pytest.mark.skipif(not _HAVE_DATA, reason='needs the cached GADM Spain file and pobmun25.xlsx (skipped in CI)')
+def test_every_alias_resolves_to_exactly_one_ine_municipality():
+    """Guards the alias table against typos: each entry must name a real GADM row, point at exactly one
+    INE municipality in that province, and no two entries may claim the same INE municipality."""
+    from pathlib import Path
+    gadm = gpd.read_file(os.path.join(_DATA, 'gadm41_ESP_4.geojson'), columns=['NAME_2', 'NAME_4'])
+    ine = fetch_ine_population(2025, Path(_DATA))
+    gadm_keys = set(zip(gadm['NAME_2'].map(_normalize_province),
+                        gadm['NAME_4'].map(lambda n: _normalize(_reorder_trailing_article(n)))))
+    lookup = {}
+    for code, prov, name in zip(ine['ine_code'], ine['province_name'], ine['municipality_name']):
+        for cand in _municipality_candidates(name):
+            lookup.setdefault((_normalize_province(prov), cand), set()).add(code)
+
+    targets = []
+    for (prov_key, gadm_key), ine_key in GADM_TO_INE_NAME_ALIASES.items():
+        assert (prov_key, gadm_key) in gadm_keys, f'alias for a GADM name that does not exist: {(prov_key, gadm_key)}'
+        codes = lookup.get((prov_key, ine_key), set())
+        assert len(codes) == 1, f'alias {(prov_key, gadm_key)} -> {ine_key!r} matches {len(codes)} INE municipalities'
+        targets.append(next(iter(codes)))
+    assert len(targets) == len(set(targets)), 'two aliases claim the same INE municipality'
