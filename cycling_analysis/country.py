@@ -69,6 +69,7 @@ from .population import (
     fetch_population_raster,
 )
 from .ine import fetch_ine_population, match_ine_to_gadm
+from .municipalities import merge_municipality_pieces
 
 # pollution.py is Spain-only for now (see CLAUDE.md's Known gaps) - every
 # other country gets blank/NaN columns 1-10, same as a Spanish municipality
@@ -745,6 +746,28 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         + cat_cols + amenity_cols + pollution_cols
     ]
 
+    # Area/population come from the CURRENT run's computation (bulk, before the
+    # loop), not from rows resumed out of an older checkpoint - the checkpoint
+    # schema guard only notices column changes, so a resumed checkpoint would
+    # otherwise keep stale population (e.g. the pre-2026-11 double-counted
+    # values) forever. Road/amenity/pollution columns still come from the
+    # checkpoint: those are what the per-municipality loop is for.
+    fresh = municipalities_gdf.set_index(gid_col)
+    summary['Municipality area (km²)'] = summary['GADM ID'].map(fresh['area_km2'])
+    summary['Population'] = summary['GADM ID'].map(fresh['population'])
+    summary['Population density (per km²)'] = summary['GADM ID'].map(fresh['population_density'])
+
+    # Spain: one output row per municipality. GADM splits some municipalities
+    # into several polygon rows (a main body plus small pieces); the loop and
+    # checkpoint stay per-polygon, but the published tables merge the pieces
+    # (see municipalities.py) so a split city is not listed - or counted - twice.
+    if country in INE_POPULATION_COUNTRIES:
+        n_polygons = len(summary)
+        summary = merge_municipality_pieces(summary, municipalities_gdf, gid_col=gid_col)
+        if len(summary) < n_polygons:
+            print(f'Merged {n_polygons - len(summary)} extra polygon pieces into their municipalities '
+                  f'({n_polygons} polygon rows -> {len(summary)} municipalities).')
+
     summary.insert(6, 'Total Cycling Path km', summary[cat_cols].sum(axis=1).round(1))
     summary = summary.sort_values(['Region', 'Total Cycling Path km'], ascending=[True, False]).reset_index(drop=True)
 
@@ -752,7 +775,10 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
     # gadm_id), not something a human reader of the CSV/PNG table needs to see -
     # dropped from the human-facing outputs only; `summary` (with GADM ID intact)
     # is still what's returned and what save_database_csv() gets below.
-    display_summary = summary.drop(columns=['GADM ID'])
+    # The merge bookkeeping columns (INE code, GADM IDs, Parts) are internal too
+    # and only go to the database CSV.
+    display_summary = summary.drop(columns=[c for c in ['GADM ID', 'INE code', 'GADM IDs', 'Parts']
+                                            if c in summary.columns])
 
     out_path = f'{run_name}_cycling_by_municipality.csv'
     display_summary.to_csv(out_path, index=False)
