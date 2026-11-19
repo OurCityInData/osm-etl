@@ -60,7 +60,7 @@ def main():
 
     n = 10
     print(f'\nTop {n} municipalities by total cycling infrastructure:\n')
-    top = summary.nlargest(n, 'Total Cycling Path km')[['Region', 'Municipality', 'Total Cycling Path km']]
+    top = summary.nlargest(n, 'Extended Cycling Path km')[['Region', 'Municipality', 'Extended Cycling Path km']]
     print(top.to_string(index=False))
 
     cat_cols = [c for c in CATEGORIES if c in summary.columns]
