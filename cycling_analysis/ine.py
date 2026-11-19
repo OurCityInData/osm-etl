@@ -203,7 +203,64 @@ GADM_TO_INE_NAME_ALIASES = {
     ('castellon', 'herbes'): 'herbers',   # Herbers <- GADM Herbés (68 people)
     ('teruel', 'villanuevadelrebollardelasi'): 'villanuevadelrebollardelasierra',   # Villanueva del Rebollar de la Sierra <- GADM VillanuevadelRebollardelaSi (49 people)
     ('burgos', 'castrillomatajudios'): 'castrillomotadejudios',   # Castrillo Mota de Judíos <- GADM CastrilloMatajudíos (48 people)
+    # --- Mergers: INE's Cerdedo-Cotobade and Oza-Cesuras are ONE municipality that GADM still draws as two polygons.
+    # --- Both halves are aliased to the same INE name; match_ine_to_gadm() then puts the population on the larger
+    # --- polygon and merge_municipality_pieces() folds the two into one row, exactly like a split municipality.
+    # --- Entries below whose target is a tuple (province, name) cross a province boundary: GADM files the
+    # --- Urduña/Orduña enclave under Álava and Petilla de Aragón under Zaragoza, INE under Bizkaia / Navarra.
+    # --- verified 2026-11-17 (second pass): each pair was accepted only because an OSM place node carrying the
+    # --- INE name (or the old/regional name of the same town) sits INSIDE the GADM polygon, the INE name is a renamed,
+    # --- regional-language or longer form of the GADM name, and the implied density is plausible.
+    # --- Renames (Boadella, Brunyola, Calonge, Cabrera, Vimbodi, Passanant, Masarac, Saus, La Bisbal, L'Esquirol...),
+    # --- Basque/Catalan/Valencian forms (Urrotz, Adsubia, Facheca...), and valley/cendea names (Yerri, Ollo, Olza).
+    ('alicante', 'adsubia'): 'latzubia',   # Atzúbia, l' <- GADM Adsubia (589 people)
+    ('larioja', 'ajamil'): 'ajamildecameros',   # Ajamil de Cameros <- GADM Ajamil (79 people)
+    ('alicante', 'alcocerdeplanes'): 'alcosser',   # Alcosser <- GADM AlcocerdePlanes (263 people)
+    ('valencia', 'alfaradealgimia'): 'alfaradelabaronia',   # Alfara de la Baronia <- GADM AlfaradeAlgimia (624 people)
+    ('girona', 'boadellademporda'): 'boadellailesescaules',   # Boadella i les Escaules <- GADM Boadellad'Empordà (262 people)
+    ('girona', 'brunyola'): 'brunyolaisantmartisapresa',   # Brunyola i Sant Martí Sapresa <- GADM Brunyola (401 people)
+    ('barcelona', 'cabreradigualada'): 'cabreradanoia',   # Cabrera d'Anoia <- GADM Cabrerad'Igualada (1,772 people)
+    ('girona', 'calonge'): 'calongeisantantoni',   # Calonge i Sant Antoni <- GADM Calonge (12,335 people)
+    ('pontevedra', 'cerdedo'): 'cerdedocotobade',   # Cerdedo-Cotobade <- GADM Cerdedo (5,671 people)
+    ('pontevedra', 'cotobade'): 'cerdedocotobade',   # Cerdedo-Cotobade <- GADM Cotobade (5,671 people)
+    ('acoruna', 'cesuras'): 'ozacesuras',   # Oza-Cesuras <- GADM Cesuras (5,159 people)
+    ('acoruna', 'ozadosrios'): 'ozacesuras',   # Oza-Cesuras <- GADM OzadosRíos (5,159 people)
+    ('caceres', 'collado'): 'colladodelavera',   # Collado de la Vera <- GADM Collado (274 people)
+    ('zamora', 'corrales'): 'corralesdelvino',   # Corrales del Vino <- GADM Corrales (930 people)
+    ('alicante', 'facheca'): 'fageca',   # Fageca <- GADM Facheca (100 people)
+    ('caceres', 'higuera'): 'higueradealbalat',   # Higuera de Albalat <- GADM Higuera (102 people)
+    ('zaragoza', 'jarque'): 'jarquedemoncayo',   # Jarque de Moncayo <- GADM Jarque (373 people)
+    ('tarragona', 'labisbaldefalset'): 'labisbaldemontsant',   # Bisbal de Montsant, La <- GADM LaBisbaldeFalset (214 people)
+    ('toledo', 'laiglesuela'): 'laiglesueladeltietar',   # Iglesuela del Tiétar, La <- GADM LaIglesuela (448 people)
+    ('navarra', 'lizoain'): 'lizoainarriasgoitilizoainibararriasgoiti',   # Lizoain-Arriasgoiti/Lizoainibar-Arriasgoiti <- GADM Lizoáin (287 people)
+    ('valencia', 'lugarnuevodelacorona'): 'llocnoudelacorona',   # Llocnou de la Corona <- GADM LugarNuevodelaCorona (132 people)
+    ('larioja', 'lumbreras'): 'lumbrerasdecameros',   # Lumbreras de Cameros <- GADM Lumbreras (144 people)
+    ('avila', 'manjabalago'): 'manjabalagoyortigosaderioalmar',   # Manjabálago y Ortigosa de Rioalmar <- GADM Manjabálago (22 people)
+    ('girona', 'masarac'): 'masaracivilarnadal',   # Masarac i Vilarnadal <- GADM Masarac (287 people)
+    ('navarra', 'ollo'): 'valledeolloollaran',   # Valle de Ollo/Ollaran <- GADM Ollo (453 people)
+    ('navarra', 'olza'): 'cendeadeolzaoltzazendea',   # Cendea de Olza/Oltza Zendea <- GADM Olza (1,874 people)
+    ('navarra', 'yerri'): 'valledeyerrideierri',   # Valle de Yerri/Deierri <- GADM Yerri (1,549 people)
+    ('navarra', 'urrotz'): 'urrozvilla',   # Urroz-Villa <- GADM Urrotz (403 people)
+    ('tarragona', 'passanant'): 'passanantibelltall',   # Passanant i Belltall <- GADM Passanant (149 people)
+    ('cuenca', 'pozorrubio'): 'pozorrubiodesantiago',   # Pozorrubio de Santiago <- GADM Pozorrubio (307 people)
+    ('valencia', 'realdemontroi'): 'real',   # Real <- GADM RealdeMontroi (2,497 people)
+    ('valencia', 'puig'): 'elpuigdesantamaria',   # Puig de Santa Maria, el <- GADM Puig (9,490 people)
+    ('valencia', 'sanjuandeenova'): 'santjoanet',   # Sant Joanet <- GADM SanJuandeÉnova (527 people)
+    ('toledo', 'retamoso'): 'retamosodelajara',   # Retamoso de la Jara <- GADM Retamoso (109 people)
+    ('valencia', 'villanuevadecastellon'): 'castello',   # Castelló <- GADM VillanuevadeCastellón (6,972 people)
+    ('santacruzdetenerife', 'vilaflor'): 'vilaflordechasna',   # Vilaflor de Chasna <- GADM Vilaflor (1,930 people)
+    ('leon', 'villadecanes'): 'toraldelosvados',   # Toral de los Vados <- GADM Villadecanes (1,751 people)
+    ('tarragona', 'vimbodi'): 'vimbodiipoblet',   # Vimbodí i Poblet <- GADM Vimbodí (887 people)
+    ('cantabria', 'villaverdedetrucios'): 'valledevillaverde',   # Valle de Villaverde <- GADM VillaverdedeTrucíos (249 people)
+    ('girona', 'saus'): 'sauscamalleraillampaies',   # Saus, Camallera i Llampaies <- GADM Saus (897 people)
+    ('barcelona', 'santamariadecorco'): 'lesquirol',   # Esquirol, L' <- GADM SantaMariadeCorcó (2,301 people)
+    ('alava', 'urdunaorduna'): ('vizcaya', 'urdunaorduna'),   # Urduña/Orduña <- GADM Urduña-Orduña (4,247 people)
+    ('zaragoza', 'petilladearagon'): ('navarra', 'petilladearagon'),   # Petilla de Aragón <- GADM PetilladeAragón (29 people)
 }
+
+# Alias targets that INTENTIONALLY receive more than one GADM name (INE merged two municipalities that GADM still
+# lists separately); the alias guard test allows a repeated target only for these.
+MERGED_ALIAS_TARGETS = {('pontevedra', 'cerdedocotobade'), ('acoruna', 'ozacesuras')}
 
 # Trailing ", <article>" alphabetization suffix INE uses for some province
 # and municipality names (Castilian/Catalan/Balearic/Galician articles).
@@ -367,7 +424,9 @@ def assign_ine_codes(municipalities_gdf: gpd.GeoDataFrame, ine_df: pd.DataFrame)
     muni_keys = municipalities_gdf['NAME_4'].map(lambda s: _normalize(_reorder_trailing_article(s)))
     resolved, ambiguous = [], []
     for pk, mk in zip(prov_keys, muni_keys):
-        found = lookup.get((pk, GADM_TO_INE_NAME_ALIASES.get((pk, mk), mk)), set())
+        alias = GADM_TO_INE_NAME_ALIASES.get((pk, mk), mk)
+        # a tuple alias names (province, name) in a DIFFERENT province than GADM files the polygon under
+        found = lookup.get(alias if isinstance(alias, tuple) else (pk, alias), set())
         if len(found) == 1:
             resolved.append(next(iter(found)))
         else:
