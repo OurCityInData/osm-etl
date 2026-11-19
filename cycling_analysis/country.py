@@ -181,6 +181,10 @@ GADM_CONFIG = {
 
 # UTM zone per country. EPSG:32631 covers Spain/Netherlands/Belgium/France;
 # use EPSG:32632 for Denmark/eastern Germany if you add those runs.
+# 'Dedicated Cycling Path km' = the km of these categories only: lanes built for bikes (side lanes, lanes on the
+# sidewalk) and lanes shared with buses. Same four categories as qc.DEDICATED_COLS.
+DEDICATED_PATH_CATEGORIES = ['Two-way side bike lane', 'One-way side bike lane', 'Bike lane on sidewalk', 'Bus-bike lane']
+
 UTM_CRS_BY_COUNTRY = {
     'spain': 'EPSG:32631', 'netherlands': 'EPSG:32631',
     'belgium': 'EPSG:32631', 'germany': 'EPSG:32632', 'denmark': 'EPSG:32632',
@@ -775,8 +779,9 @@ def run_country_analysis(country, filter_regions=None, data_dir=Path('data'),
         print(f'Municipality names: {n_fixed} of {len(summary)} taken from INE '
               f'({len(summary) - n_fixed} keep the GADM name - no INE match).')
 
-    summary.insert(6, 'Total Cycling Path km', summary[cat_cols].sum(axis=1).round(1))
-    summary = summary.sort_values(['Region', 'Total Cycling Path km'], ascending=[True, False]).reset_index(drop=True)
+    summary.insert(6, 'Extended Cycling Path km', summary[cat_cols].sum(axis=1).round(1))
+    summary.insert(7, 'Dedicated Cycling Path km', summary[DEDICATED_PATH_CATEGORIES].sum(axis=1).round(1))
+    summary = summary.sort_values(['Region', 'Extended Cycling Path km'], ascending=[True, False]).reset_index(drop=True)
 
     # GADM ID is an internal join/resume key (checkpoint resume, save_database_csv's
     # gadm_id), not something a human reader of the CSV/PNG table needs to see -

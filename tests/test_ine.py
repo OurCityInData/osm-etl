@@ -12,12 +12,13 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from cycling_analysis.ine import (
     GADM_TO_INE_NAME_ALIASES,
+    MERGED_ALIAS_TARGETS,
     _municipality_candidates,
     _normalize,
     _normalize_province,
@@ -290,7 +291,34 @@ def test_every_alias_resolves_to_exactly_one_ine_municipality():
     targets = []
     for (prov_key, gadm_key), ine_key in GADM_TO_INE_NAME_ALIASES.items():
         assert (prov_key, gadm_key) in gadm_keys, f'alias for a GADM name that does not exist: {(prov_key, gadm_key)}'
-        codes = lookup.get((prov_key, ine_key), set())
+        target_key = ine_key if isinstance(ine_key, tuple) else (prov_key, ine_key)    # tuple = cross-province alias
+        codes = lookup.get(target_key, set())
         assert len(codes) == 1, f'alias {(prov_key, gadm_key)} -> {ine_key!r} matches {len(codes)} INE municipalities'
-        targets.append(next(iter(codes)))
-    assert len(targets) == len(set(targets)), 'two aliases claim the same INE municipality'
+        targets.append((target_key, next(iter(codes))))
+    repeated = {k for k, c in targets if [t[1] for t in targets].count(c) > 1}
+    assert repeated <= set(MERGED_ALIAS_TARGETS),         f'two aliases claim the same INE municipality, and it is not a declared merger: {repeated - set(MERGED_ALIAS_TARGETS)}'
+
+
+def test_cross_province_alias_target_is_found_in_the_other_province():
+    ine_df = pd.DataFrame({'ine_code': ['48090', '31001'], 'province_name': ['Bizkaia', 'Navarra'],
+                           'municipality_name': ['Urduña/Orduña', 'Algo'], 'population': [4247, 10]})
+    gadm = gpd.GeoDataFrame({'NAME_2': ['Álava'], 'NAME_4': ['Urduña-Orduña'], 'GID_4': ['X']},
+                            geometry=[box(0, 0, 1, 1)], crs=4326)
+
+    codes = assign_ine_codes(gadm, ine_df)
+
+    assert codes.iloc[0] == '48090'
+
+
+def test_merger_aliases_give_both_halves_the_same_ine_code():
+    ine_df = pd.DataFrame({'ine_code': ['36999'], 'province_name': ['Pontevedra'],
+                           'municipality_name': ['Cerdedo-Cotobade'], 'population': [5671]})
+    gadm = gpd.GeoDataFrame({'NAME_2': ['Pontevedra', 'Pontevedra'], 'NAME_4': ['Cerdedo', 'Cotobade'], 'GID_4': ['A', 'B']},
+                            geometry=[box(0, 0, 1, 1), box(1, 0, 3, 1)], crs=4326)
+
+    matched = match_ine_to_gadm(gadm, ine_df)
+
+    assert matched['ine_code'].tolist() == ['36999', '36999']
+    big = matched[matched['GID_4'] == 'B'].iloc[0]                       # the larger polygon carries the population
+    small = matched[matched['GID_4'] == 'A'].iloc[0]
+    assert big['population'] == 5671 and pd.isna(small['population'])

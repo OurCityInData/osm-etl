@@ -9,13 +9,14 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from cycling_analysis.country import slugify_column
+from cycling_analysis.area_classification import CATEGORIES
+from cycling_analysis.country import DEDICATED_PATH_CATEGORIES, slugify_column
 
 
 def test_slugify_column_basic_words():
     assert slugify_column('Region') == 'region'
     assert slugify_column('Municipality') == 'municipality'
-    assert slugify_column('Total Cycling Path km') == 'total_cycling_path_km'
+    assert slugify_column('Extended Cycling Path km') == 'extended_cycling_path_km'
 
 
 def test_slugify_column_strips_units_and_symbols():
@@ -32,3 +33,13 @@ def test_slugify_column_leading_digit_gets_prefixed():
 def test_slugify_column_is_idempotent():
     once = slugify_column('Days failing Spain/EU PM2.5 limit')
     assert slugify_column(once) == once
+
+
+def test_dedicated_path_categories_are_the_four_requested_and_real_categories():
+    assert DEDICATED_PATH_CATEGORIES == ['Two-way side bike lane', 'One-way side bike lane',
+                                         'Bike lane on sidewalk', 'Bus-bike lane']
+    assert set(DEDICATED_PATH_CATEGORIES) <= set(CATEGORIES)
+
+
+def test_dedicated_cycling_path_column_slug():
+    assert slugify_column('Dedicated Cycling Path km') == 'dedicated_cycling_path_km'
